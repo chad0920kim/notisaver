@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'providers/notification_provider.dart';
 import 'models/notification_log.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Google Mobile Ads SDK 초기화
+  try {
+    await MobileAds.instance.initialize();
+  } catch (e) {
+    debugPrint("Failed to initialize MobileAds SDK: $e");
+  }
   try {
     await dotenv.load(fileName: ".env");
   } catch (e) {
@@ -66,6 +73,8 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final TextEditingController _searchController = TextEditingController();
+  BannerAd? _bannerAd;
+  bool _isBannerAdReady = false;
 
   @override
   void initState() {
@@ -77,6 +86,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _searchController.dispose();
+    _bannerAd?.dispose();
     super.dispose();
   }
 
@@ -86,6 +96,64 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       context.read<NotificationProvider>().checkPermissionStatus();
     }
+  }
+
+  // 배너 광고 로딩 함수
+  void _loadBannerAd() {
+    final adUnitId = dotenv.env['ADMOB_BANNER_UNIT_ID'] ?? 'ca-app-pub-3940256099942544/6300978111';
+    
+    _bannerAd = BannerAd(
+      adUnitId: adUnitId,
+      request: const AdRequest(),
+      size: AdSize.banner,
+      listener: BannerAdListener(
+        onAdLoaded: (_) {
+          setState(() {
+            _isBannerAdReady = true;
+          });
+        },
+        onAdFailedToLoad: (ad, err) {
+          debugPrint('Failed to load AdMob banner: ${err.message}');
+          ad.dispose();
+          _bannerAd = null;
+          setState(() {
+            _isBannerAdReady = false;
+          });
+        },
+      ),
+    )..load();
+  }
+
+  // 프리미엄 구매 다이얼로그 표시 함수
+  void _showPremiumDialog(BuildContext context, NotificationProvider provider) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('광고 없는 프리미엄 업그레이드'),
+        content: Text(
+          '광고 없는 깔끔한 알림 보관함 서비스를 원하시나요?\n\n'
+          '모든 광고가 즉시 영구 제거되며, 백그라운드 실시간 알림 백업 기능을 계속 지원합니다.\n\n'
+          '광고 ID: ${dotenv.env['ADMOB_BANNER_UNIT_ID'] ?? '설정 로드 실패'}\n\n'
+          '💳 가격: ₩1,200 (1회성 영구 결제)',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('다음에'),
+          ),
+          TextButton(
+            onPressed: () {
+              provider.buyAdFree();
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('🎉 광고 제거 프리미엄이 정상 구매되었습니다!')),
+              );
+            },
+            child: const Text('결제 승인', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.amber)),
+          ),
+        ],
+      ),
+    );
   }
 
   // 패키지 명칭을 읽기 쉽게 번역
@@ -132,6 +200,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final provider = context.watch<NotificationProvider>();
 
+    // 광고 상태에 맞춰 배너 광고 메모리 제어
+    if (provider.isAdFree) {
+      if (_bannerAd != null) {
+        _bannerAd!.dispose();
+        _bannerAd = null;
+        _isBannerAdReady = false;
+      }
+    } else {
+      if (_bannerAd == null && !_isBannerAdReady) {
+        _loadBannerAd();
+      }
+    }
+
     return Scaffold(
       appBar: AppBar(
         backgroundColor: const Color(0xFF0B0A11),
@@ -150,6 +231,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ],
         ),
         actions: [
+          // 프리미엄 결제 (광고 미제거 상태 시 노출)
+          if (!provider.isAdFree)
+            IconButton(
+              icon: const Icon(Icons.workspace_premium, color: Colors.amber),
+              tooltip: '광고 제거',
+              onPressed: () => _showPremiumDialog(context, provider),
+            ),
           // 전체 삭제 버튼
           IconButton(
             icon: const Icon(Icons.delete_sweep, color: Colors.grey),
@@ -404,60 +492,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   ),
           ),
 
-          // 5. 모의 광고 배너 및 인앱결제 유도
-          if (!provider.isAdFree)
-            GestureDetector(
-              onTap: () {
-                showDialog(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: const Text('광고 없는 프리미엄 업그레이드'),
-                    content: Text(
-                      '광고 없는 깔끔한 알림 보관함 서비스를 원하시나요?\n\n'
-                      '모든 광고가 즉시 영구 제거되며, 백그라운드 실시간 알림 백업 기능을 계속 지원합니다.\n\n'
-                      '광고 ID: ${dotenv.env['ADMOB_BANNER_UNIT_ID'] ?? '설정 로드 실패'}\n\n'
-                      '💳 가격: ₩1,200 (1회성 영구 결제)',
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text('다음에'),
-                      ),
-                      TextButton(
-                        onPressed: () {
-                          provider.buyAdFree();
-                          Navigator.pop(context);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('🎉 광고 제거 프리미엄이 정상 구매되었습니다!')),
-                          );
-                        },
-                        child: const Text('결제 승인', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.amber)),
-                      ),
-                    ],
-                  ),
-                );
-              },
-              child: Container(
-                width: double.infinity,
-                height: 56,
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Color(0xFF2A244E), Color(0xFF1F1A3A)],
-                  ),
-                  border: Border(top: BorderSide(color: Color(0xFF6C63FF), width: 1.5)),
-                ),
-                child: const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.workspace_premium, color: Colors.amber, size: 20),
-                    SizedBox(width: 8),
-                    Text(
-                      '₩1,200원에 평생 광고 제거하기 (클릭해 구매 시뮬레이션)',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
-                    ),
-                  ],
-                ),
+          // 5. 실제 AdMob 배너 광고 영역
+          if (!provider.isAdFree && _isBannerAdReady && _bannerAd != null)
+            Container(
+              alignment: Alignment.center,
+              width: _bannerAd!.size.width.toDouble(),
+              height: _bannerAd!.size.height.toDouble(),
+              decoration: const BoxDecoration(
+                border: Border(top: BorderSide(color: Color(0xFF151421), width: 1.0)),
               ),
+              child: AdWidget(ad: _bannerAd!),
             ),
         ],
       ),
