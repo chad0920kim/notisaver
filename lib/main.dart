@@ -90,11 +90,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     super.dispose();
   }
 
-  // 앱이 백그라운드에서 다시 활성화될 때 권한 상태 리로드
+  // 앱이 백그라운드에서 다시 활성화될 때 권한 상태 및 알림 목록 리로드
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      context.read<NotificationProvider>().checkPermissionStatus();
+      final provider = context.read<NotificationProvider>();
+      provider.checkPermissionStatus();
+      provider.loadLogs();      // ← 백그라운드에서 쌓인 알림 목록 갱신
+      provider.loadPackages(); // ← 필터 탭 갱신
     }
   }
 
@@ -437,7 +440,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       ],
                     ),
                   )
-                : ListView.builder(
+                : RefreshIndicator(
+                    onRefresh: () async {
+                      await provider.loadLogs();
+                      await provider.loadPackages();
+                    },
+                    child: ListView.builder(
                     itemCount: provider.logs.length,
                     itemBuilder: (context, index) {
                       final NotificationLog log = provider.logs[index];
@@ -495,6 +503,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         ),
                       );
                     },
+                  ),
                   ),
           ),
 
