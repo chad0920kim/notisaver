@@ -4,6 +4,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'providers/notification_provider.dart';
 import 'models/notification_log.dart';
+import 'services/database_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -125,6 +126,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         },
       ),
     )..load();
+  }
+
+  // 테스트용 더미 알림 DB 직접 삽입 (디버그 목적: Kotlin 서비스 vs Flutter DB/UI 구분용)
+  Future<void> _insertTestNotification(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final provider = context.read<NotificationProvider>();
+    await DatabaseService.instance.insertTestLog();
+    await provider.loadLogs();
+    await provider.loadPackages();
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('✅ 테스트 알림이 DB에 직접 삽입되었습니다. 목록에 나타나는지 확인하세요.'),
+        duration: Duration(seconds: 3),
+      ),
+    );
   }
 
   // 프리미엄 구매 다이얼로그 표시 함수 (실제 구글 플레이 인앱결제 연동)
@@ -520,8 +536,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ),
         ],
       ),
+      floatingActionButton: FloatingActionButton.small(
+        heroTag: 'debug_insert',
+        backgroundColor: const Color(0xFF2A2940),
+        tooltip: 'DB 직접 삽입 테스트',
+        onPressed: () => _insertTestNotification(context),
+        child: const Icon(Icons.bug_report, color: Colors.grey, size: 18),
+      ),
     );
   }
+
+
 
   // 날짜/시간 포맷팅 유틸
   String _formatTime(int milliseconds) {

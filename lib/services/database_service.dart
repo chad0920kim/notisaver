@@ -98,4 +98,15 @@ class DatabaseService {
     final db = await database;
     await db.delete('notification_logs');
   }
+
+  // 디버그용 테스트 레코드 직접 삽입 (Flutter DB→UI 체인 검증용)
+  Future<void> insertTestLog() async {
+    final db = await database;
+    await db.insert('notification_logs', {
+      'package_name': 'com.debug.test',
+      'title': '[테스트] DB 직접 삽입',
+      'content': 'Flutter DB→UI 체인이 정상입니다. Kotlin 서비스를 확인하세요.',
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+    });
+  }
 }
