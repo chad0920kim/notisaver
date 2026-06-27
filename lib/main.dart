@@ -131,16 +131,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // 테스트용 더미 알림 DB 직접 삽입 (디버그 목적: Kotlin 서비스 vs Flutter DB/UI 구분용)
   Future<void> _insertTestNotification(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
-    final provider = context.read<NotificationProvider>();
-    await DatabaseService.instance.insertTestLog();
-    await provider.loadLogs();
-    await provider.loadPackages();
-    messenger.showSnackBar(
-      const SnackBar(
-        content: Text('✅ 테스트 알림이 DB에 직접 삽입되었습니다. 목록에 나타나는지 확인하세요.'),
-        duration: Duration(seconds: 3),
-      ),
-    );
+    try {
+      final provider = context.read<NotificationProvider>();
+      await DatabaseService.instance.insertTestLog();
+      await provider.loadLogs();
+      await provider.loadPackages();
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('✅ DB 삽입 성공! 목록에 [테스트] 항목이 나타났는지 확인하세요.'),
+          duration: Duration(seconds: 4),
+        ),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('❌ DB 오류: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 8),
+        ),
+      );
+    }
   }
 
   // 프리미엄 구매 다이얼로그 표시 함수 (실제 구글 플레이 인앱결제 연동)
