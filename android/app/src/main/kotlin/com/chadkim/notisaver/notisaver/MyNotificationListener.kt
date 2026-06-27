@@ -71,7 +71,12 @@ class MyNotificationListener : NotificationListenerService() {
     }
 }
 
-class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, "notisaver.db", null, 1) {
+class DatabaseHelper(context: Context) : SQLiteOpenHelper(
+    context,
+    context.getDatabasePath("notisaver.db").absolutePath,
+    null,
+    1
+) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
             "CREATE TABLE IF NOT EXISTS notification_logs (" +
