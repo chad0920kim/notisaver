@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:in_app_purchase/in_app_purchase.dart';
 import '../models/notification_log.dart';
 import '../services/database_service.dart';
 
@@ -17,6 +18,8 @@ class NotificationProvider extends ChangeNotifier {
   bool _isAdFree = false;
   bool _isDisposed = false;
   
+  final InAppPurchase _iap = InAppPurchase.instance;
+  StreamSubscription<List<PurchaseDetails>>? _iapSubscription;
   StreamSubscription? _eventSubscription;
   Timer? _searchDebounce;
 
@@ -33,6 +36,7 @@ class NotificationProvider extends ChangeNotifier {
 
   Future<void> _init() async {
     try {
+      _initializeIAP();
       await checkPermissionStatus();
       await loadLogs();
       await loadPackages();
@@ -138,7 +142,57 @@ class NotificationProvider extends ChangeNotifier {
     }
   }
 
-  // 5. 광고 제거 상태 (IAP 시뮬레이션)
+  // 5. 실제 인앱 결제(IAP) 수명 주기 초기화
+  void _initializeIAP() {
+    final Stream<List<PurchaseDetails>> purchaseUpdated = _iap.purchaseStream;
+    _iapSubscription = purchaseUpdated.listen(
+      (List<PurchaseDetails> purchaseDetailsList) {
+        _listenToPurchaseUpdated(purchaseDetailsList);
+      },
+      onDone: () {
+        _iapSubscription?.cancel();
+      },
+      onError: (Object error) {
+        if (kDebugMode) {
+          print("IAP purchaseStream error: $error");
+        }
+      },
+    );
+  }
+
+  // 결제 업데이트 수신 리스너
+  Future<void> _listenToPurchaseUpdated(List<PurchaseDetails> purchaseDetailsList) async {
+    for (final purchaseDetails in purchaseDetailsList) {
+      if (purchaseDetails.status == PurchaseStatus.pending) {
+        // 결제 진행 중 (대기 상태 처리 가능)
+      } else if (purchaseDetails.status == PurchaseStatus.error) {
+        if (kDebugMode) {
+          print("IAP Error: ${purchaseDetails.error}");
+        }
+      } else if (purchaseDetails.status == PurchaseStatus.purchased ||
+                 purchaseDetails.status == PurchaseStatus.restored) {
+        // 광고 제거 상품 ID 검증 ('ad_free')
+        if (purchaseDetails.productID == 'ad_free') {
+          await _setAdFreeStatus(true);
+        }
+
+        // 구글 결제 트랜잭션 종결(completePurchase) 필수 처리 (3일 내 환불 방지)
+        if (purchaseDetails.pendingCompletePurchase) {
+          await _iap.completePurchase(purchaseDetails);
+        }
+      }
+    }
+  }
+
+  // 광고 제거 구매 적용 및 로컬 프리퍼런스 저장
+  Future<void> _setAdFreeStatus(bool status) async {
+    final prefs = await SharedPreferences.getInstance();
+    _isAdFree = status;
+    await prefs.setBool('isAdFree', status);
+    notifyListeners();
+  }
+
+  // 광고 제거 상태 로드
   Future<void> _loadAdFreeStatus() async {
     final prefs = await SharedPreferences.getInstance();
     if (_isDisposed) return;
@@ -146,11 +200,39 @@ class NotificationProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // 실제 결제 요청 실행 (Google Play Store)
   Future<void> buyAdFree() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('isAdFree', true);
-    _isAdFree = true;
-    notifyListeners();
+    final bool available = await _iap.isAvailable();
+    if (!available) {
+      if (kDebugMode) print("Billing store not available.");
+      return;
+    }
+
+    const Set<String> kIds = <String>{'ad_free'};
+    final ProductDetailsResponse response = await _iap.queryProductDetails(kIds);
+    if (response.notFoundIDs.isNotEmpty) {
+      if (kDebugMode) {
+        print("Product not found: ${response.notFoundIDs}");
+      }
+      return;
+    }
+
+    final ProductDetails productDetails = response.productDetails.first;
+    final PurchaseParam purchaseParam = PurchaseParam(productDetails: productDetails);
+    
+    // 비소모품 결제 요청 (Non-consumable)
+    await _iap.buyNonConsumable(purchaseParam: purchaseParam);
+  }
+
+  // 구매 내역 복원 (Restore Purchases - 구글 심사 필수 조건)
+  Future<void> restorePurchases() async {
+    try {
+      await _iap.restorePurchases();
+    } catch (e) {
+      if (kDebugMode) {
+        print("Failed to restore purchases: $e");
+      }
+    }
   }
 
   // 6. 삭제 모듈
@@ -176,6 +258,7 @@ class NotificationProvider extends ChangeNotifier {
   void dispose() {
     _isDisposed = true;
     _eventSubscription?.cancel();
+    _iapSubscription?.cancel();
     _searchDebounce?.cancel();
     super.dispose();
   }

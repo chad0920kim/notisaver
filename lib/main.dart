@@ -124,19 +124,28 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     )..load();
   }
 
-  // 프리미엄 구매 다이얼로그 표시 함수
+  // 프리미엄 구매 다이얼로그 표시 함수 (실제 구글 플레이 인앱결제 연동)
   void _showPremiumDialog(BuildContext context, NotificationProvider provider) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('광고 없는 프리미엄 업그레이드'),
-        content: Text(
+        content: const Text(
           '광고 없는 깔끔한 알림 보관함 서비스를 원하시나요?\n\n'
           '모든 광고가 즉시 영구 제거되며, 백그라운드 실시간 알림 백업 기능을 계속 지원합니다.\n\n'
-          '광고 ID: ${dotenv.env['ADMOB_BANNER_UNIT_ID'] ?? '설정 로드 실패'}\n\n'
           '💳 가격: ₩1,200 (1회성 영구 결제)',
         ),
         actions: [
+          TextButton(
+            onPressed: () {
+              provider.restorePurchases();
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('🔄 기존 구매 내역 복원을 시도합니다...')),
+              );
+            },
+            child: const Text('구매 복원'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('다음에'),
@@ -145,11 +154,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             onPressed: () {
               provider.buyAdFree();
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('🎉 광고 제거 프리미엄이 정상 구매되었습니다!')),
-              );
             },
-            child: const Text('결제 승인', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.amber)),
+            child: const Text('결제 진행', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.amber)),
           ),
         ],
       ),
