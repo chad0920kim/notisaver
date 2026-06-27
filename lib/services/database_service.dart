@@ -29,8 +29,9 @@ class DatabaseService {
 
   // WAL (Write-Ahead Logging) 모드를 활성화하여 Kotlin 백그라운드 쓰기와 
   // Flutter 다트 읽기 간의 동시성 락(Lock) 충돌 방지
+  // onConfigure에서는 execute() 대신 rawQuery() 사용 필수
   Future _onConfigure(Database db) async {
-    await db.execute('PRAGMA journal_mode=WAL;');
+    await db.rawQuery('PRAGMA journal_mode=WAL;');
   }
 
   Future _createDB(Database db, int version) async {
